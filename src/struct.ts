@@ -13,7 +13,7 @@ export interface StructNode<T extends StructShape> {
   toObject(): T;
   squash(): StructInstance<T>;
 
-  isImmutable(): true;
+  isImmutable(): boolean;
   isRoot(): boolean;
   isBranch(): boolean;
   eq(other: StructInstance<T>): boolean;

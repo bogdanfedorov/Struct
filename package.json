@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --allow-natives-syntax --test spec/*.spec.js",
-    "example": "ts-node src/example/struct.example.ts"
+    "example": "ts-node example/struct.example.ts"
   },
   "devDependencies": {
     "@types/node": "^20.14.9",

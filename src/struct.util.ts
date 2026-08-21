@@ -60,7 +60,7 @@ function buildFactory<T extends StructShape>(shape: T, freeze: boolean): StructF
   const proto = {
     get(this: StructInstance<T>, key: Key<T>): Value<T> {
       const value = (this as unknown as T)[key];
-      if (value === undefined) throw new Error(RefByKeyNotFound);
+      if (value === undefined) throw new Error(`${RefByKeyNotFound}: ${key}`);
       return value as Value<T>;
     },
     assoc(this: StructInstance<T>, key: Key<T>, value: Value<T>) {
@@ -88,8 +88,8 @@ function buildFactory<T extends StructShape>(shape: T, freeze: boolean): StructF
       const flat = this.toObject();
       return makeInstance(flat, flat, null, null, metaOf(this).lineagePath);
     },
-    isImmutable() {
-      return true as const;
+    isImmutable(this: StructInstance<T>) {
+      return freeze;
     },
     isRoot(this: StructInstance<T>) {
       return metaOf(this).parent === null;
@@ -115,11 +115,18 @@ function buildFactory<T extends StructShape>(shape: T, freeze: boolean): StructF
   };
 }
 
+const chainedFrozen = <T extends StructShape>(shape: T): StructFactory<T> => buildFactory(shape, true);
+const chainedFast = <T extends StructShape>(shape: T): StructFactory<T> => buildFactory(shape, false);
+
 export const Struct = {
-  immutable: <T extends StructShape>(shape: T): StructFactory<T> => buildFactory(shape, true),
+  immutable: chainedFrozen,
   backends: {
-    chainedFrozen: <T extends StructShape>(shape: T): StructFactory<T> => buildFactory(shape, true),
-    chainedFast: <T extends StructShape>(shape: T): StructFactory<T> => buildFactory(shape, false),
-    snapshot: <T extends StructShape>(shape: T): StructFactory<T> => buildFactory(shape, true),
+    chainedFrozen,
+    chainedFast,
+    // Alias, not a distinct implementation: `snapshot` has no storage strategy
+    // of its own yet (was previously a byte-identical copy of chainedFrozen
+    // pretending otherwise). Keeping the name reserved for a future
+    // GC-friendly variant that doesn't pin the whole ancestor chain in memory.
+    snapshot: chainedFrozen,
   },
 };

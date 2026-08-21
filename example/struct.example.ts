@@ -1,5 +1,5 @@
-import type { StructFactory, StructInstance } from "../struct.d.ts";
-import { Struct } from '../index.js';
+import type { StructFactory, StructInstance } from "../src/struct";
+import { Struct } from '../src/index';
 
 type Ledger = {
   'account-id': string;
