@@ -104,3 +104,25 @@ test('a fresh root from a factory is its own root with no lineage', () => {
   assert.equal(root.parent(), null);
   assert.deepEqual(root.lineage(), []);
 });
+
+test('a long branch() chain stays O(n), not O(n^2): 20k branches complete quickly with correct lineage', () => {
+  const Ledger = Struct.immutable({ id: 'a', balance: 0 });
+  const CHAIN_LENGTH = 20_000;
+
+  let node = Ledger();
+  const start = process.hrtime.bigint();
+  for (let i = 1; i <= CHAIN_LENGTH; i++) node = node.branch(`tx-${i}`, { balance: i });
+  const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+
+  const lineage = node.lineage();
+  assert.equal(lineage.length, CHAIN_LENGTH);
+  assert.equal(lineage[0], 'tx-1');
+  assert.equal(lineage[lineage.length - 1], `tx-${CHAIN_LENGTH}`);
+
+  // Regression guard for the lineagePath-copy bug: eagerly copying a
+  // growing array on every branch() call made this O(n^2) and took tens of
+  // seconds (or OOM'd) at this length. Lazy, on-demand lineage() walking
+  // keeps building the chain itself O(n) — a generous ceiling well below
+  // what the O(n^2) version would take on this size input.
+  assert.ok(elapsedMs < 5000, `branch() chain took ${elapsedMs.toFixed(0)}ms — looks quadratic again`);
+});

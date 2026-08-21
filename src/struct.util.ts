@@ -3,7 +3,13 @@ import { RefByKeyNotFound } from "./struct.errors";
 
 interface NodeMeta<T extends StructShape> {
   readonly parent: StructInstance<T> | null;
-  readonly lineagePath: readonly string[];
+  // Only set on squash() results, which sever `parent` and so have no live
+  // chain left to walk for lineage() — every other node computes lineage()
+  // on demand by walking `parent`, instead of eagerly copying a
+  // same-array's-worth of branch names on every single branch() call (which
+  // made a chain of N branch()es cost O(N^2) memory: every still-reachable
+  // ancestor kept its own full-length copy alive at once).
+  readonly cachedLineage: readonly string[] | null;
   readonly branchName: string | null;
   readonly ownFields: Partial<T>;
 }
@@ -33,7 +39,7 @@ function buildFactory<T extends StructShape>(shape: T, freeze: boolean): StructF
     ownFields: Partial<T>,
     parent: StructInstance<T> | null,
     branchName: string | null,
-    lineagePath: readonly string[],
+    cachedLineage: readonly string[] | null,
   ): StructInstance<T> => {
     const instance = Object.create(proto) as StructInstance<T>;
     if (freeze) {
@@ -47,14 +53,13 @@ function buildFactory<T extends StructShape>(shape: T, freeze: boolean): StructF
     } else {
       Object.assign(instance, data);
     }
-    meta.set(instance, { parent, lineagePath, branchName, ownFields });
+    meta.set(instance, { parent, cachedLineage, branchName, ownFields });
     return instance;
   };
 
   const forkFrom = (current: StructInstance<T>, overrides: Partial<T>, name: string | null): StructInstance<T> => {
     const data = { ...(current as unknown as T), ...overrides };
-    const lineagePath = name ? [...metaOf(current).lineagePath, name] : metaOf(current).lineagePath;
-    return makeInstance(data, overrides, current, name, lineagePath);
+    return makeInstance(data, overrides, current, name, null);
   };
 
   const proto = {
@@ -76,7 +81,17 @@ function buildFactory<T extends StructShape>(shape: T, freeze: boolean): StructF
       return metaOf(this).parent;
     },
     lineage(this: StructInstance<T>) {
-      return [...metaOf(this).lineagePath];
+      const cached = metaOf(this).cachedLineage;
+      if (cached) return [...cached];
+
+      const names: string[] = [];
+      let node: StructInstance<T> | null = this;
+      while (node) {
+        const m = metaOf(node);
+        if (m.branchName) names.push(m.branchName);
+        node = m.parent;
+      }
+      return names.reverse();
     },
     diff(this: StructInstance<T>): Partial<T> {
       return { ...metaOf(this).ownFields };
@@ -86,7 +101,7 @@ function buildFactory<T extends StructShape>(shape: T, freeze: boolean): StructF
     },
     squash(this: StructInstance<T>) {
       const flat = this.toObject();
-      return makeInstance(flat, flat, null, null, metaOf(this).lineagePath);
+      return makeInstance(flat, flat, null, null, this.lineage());
     },
     isImmutable(this: StructInstance<T>) {
       return freeze;

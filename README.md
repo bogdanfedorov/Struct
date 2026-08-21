@@ -129,13 +129,73 @@ Read this honestly, not as a clean story:
   beat config A" is signal vs. run-to-run noise on this machine — several of
   the differences above are inside that noise band.
 
+### Memory: what a long fork chain actually costs
+
+Every `assoc`/`fork`/`branch` stores a `parent` link, so holding just the
+*tip* of a chain keeps its whole ancestor lineage reachable — nothing before
+it can be collected until you `squash()`. `bench/memory.bench.js` measures
+that directly: build a 200,000-`branch()` chain, force a real GC, measure
+retained heap, `squash()`, force GC again, measure again.
+
+```
+chain length            = 200,000
+chain depth (.parent()) = 200,001
+squashed depth          = 1
+
+heap before chain       = 3.67 MB
+heap after chain        = 62.82 MB  (+59.15 MB)
+heap after squash() +gc = 19.01 MB  (-43.81 MB freed)
+
+~bytes/node retained while chained = 310.1 B
+squash() freed 74.1% of the chain's heap cost
+lineage preserved after squash: true
+```
+
+Run it with `npm run bench:memory` (or `node --expose-gc bench/memory.bench.js
+<chainLength>` directly — `--expose-gc` is required, the script refuses to
+run without it rather than silently printing meaningless numbers).
+
+**What this is telling you, plainly:** an app that keeps `fork()`/`branch()`ing
+without ever calling `squash()` grows memory in proportion to how many forks
+are still reachable — here, ~310 bytes per node in the chain. `squash()`
+gives ~74% of that back; the remaining ~26% is the branch-name strings
+`squash()` is *supposed* to keep (`lineage()` still reports all 200,000
+names afterward — that's a documented feature, not a leftover leak).
+
+Two real bugs surfaced by building this benchmark, not just its final
+numbers:
+
+- **`branch()` used to be O(n²) for a chain of n branches.** Its lineage
+  tracking copied the *entire* accumulated name array on every single
+  `branch()` call (`[...previousLineage, name]`), and because every fork in
+  a chain stays reachable via `parent`, all of those ever-growing copies
+  were retained simultaneously. A 200,000-branch chain OOM'd a multi-GB heap
+  before this was fixed. It's fixed now — `lineage()` walks the live
+  `parent` chain lazily and only `squash()` (which severs `parent`) pays to
+  materialize the array, once. `fork()` never had this bug (it only reuses
+  the parent's array reference when there's no branch name). Regression
+  test: `spec/functional.spec.js` asserts a 20k-branch chain builds in
+  under 5 seconds.
+- **A bare `global.gc()` on this V8 build doesn't reliably force a
+  synchronous collection**, and a chain-depth-walking loop inlined at
+  top-level script scope can look "reachable" to conservative stack
+  scanning for the rest of that (non-returned) frame — which, because each
+  node's `parent` link is a *strong* reference, transitively pins that
+  node's entire remaining ancestor chain too. Both are benchmark-methodology
+  traps, not library bugs, but they're exactly the kind of thing that makes
+  memory numbers lie if you don't check for them — see the comment at the
+  top of `bench/memory.bench.js` for the concrete fix (`{ type: 'major',
+  execution: 'sync' }`, and wrapping any whole-chain walk in a function that
+  returns before the next measurement).
+
 ## Develop
 
 ```bash
 npm install
 npm test      # builds, then runs spec/*.spec.js with node --allow-natives-syntax --test
 npm run example
-npm run bench # V8 tier benchmarks (see Benchmarks above) — takes ~1-2 min
+npm run bench        # V8 tier benchmarks (see Benchmarks above) — takes ~1-2 min
+npm run bench:memory # long-chain retained-heap vs squash() (see Memory above)
 ```
 
 ## License

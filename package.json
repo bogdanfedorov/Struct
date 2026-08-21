@@ -17,7 +17,8 @@
     "bench:no-opt": "npm run build && node --no-turbofan --no-maglev bench/tiers.bench.js no-opt",
     "bench:maglev": "npm run build && node --no-turbofan --maglev bench/tiers.bench.js maglev-only",
     "bench:turbofan": "npm run build && node --turbofan --no-maglev bench/tiers.bench.js turbofan-only",
-    "bench:turbofan-maglev": "npm run build && node --turbofan --maglev bench/tiers.bench.js turbofan+maglev"
+    "bench:turbofan-maglev": "npm run build && node --turbofan --maglev bench/tiers.bench.js turbofan+maglev",
+    "bench:memory": "npm run build && node --expose-gc bench/memory.bench.js"
   },
   "devDependencies": {
     "@types/node": "^20.14.9",
