@@ -43,7 +43,20 @@ function benchForkChain() {
   return { name: 'fork', ms: elapsedMs, checksum: node.balance };
 }
 
-const results = [benchAssoc(), benchForkChain()].map((r) => ({
+function benchAssocChainedFast() {
+  const Ledger = Struct.backends.chainedFast({ 'account-id': 'acc_1', balance: 0, tag: 'root' });
+  let node = Ledger();
+
+  for (let i = 0; i < WARMUP; i++) node = node.assoc('balance', i);
+
+  const start = process.hrtime.bigint();
+  for (let i = 0; i < ITERATIONS; i++) node = node.assoc('balance', i);
+  const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+
+  return { name: 'assoc-chainedFast', ms: elapsedMs, checksum: node.balance };
+}
+
+const results = [benchAssoc(), benchForkChain(), benchAssocChainedFast()].map((r) => ({
   label,
   bench: r.name,
   iterations: ITERATIONS,

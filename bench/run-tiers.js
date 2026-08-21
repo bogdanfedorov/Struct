@@ -12,9 +12,11 @@
 //   npm run bench
 
 const { spawnSync } = require('node:child_process');
+const os = require('node:os');
 const path = require('node:path');
 
 const BENCH_SCRIPT = path.join(__dirname, 'tiers.bench.js');
+const REPEATS = Number(process.env.BENCH_REPEATS) || 5;
 
 const CONFIGS = [
   { label: 'no-opt', note: 'Ignition + Sparkplug only', flags: ['--no-turbofan', '--no-maglev'] },
@@ -44,26 +46,58 @@ function pad(str, len) {
   return str + ' '.repeat(Math.max(0, len - str.length));
 }
 
+function median(nums) {
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 function main() {
-  const allResults = [];
+  const allRuns = [];
   for (const config of CONFIGS) {
-    process.stderr.write(`running: ${config.label} (${config.note}) — ${config.flags.join(' ')}\n`);
-    allResults.push(...runOne(config));
-  }
-
-  const benches = [...new Set(allResults.map((r) => r.bench))];
-
-  for (const bench of benches) {
-    const rows = allResults.filter((r) => r.bench === bench);
-    const baseline = rows.find((r) => r.label === 'no-opt');
-
-    console.log(`\n${bench}() — ${rows[0].iterations.toLocaleString()} iterations, after warmup`);
-    console.log(pad('config', 18) + pad('ms', 10) + pad('ops/sec', 14) + 'vs no-opt');
-    for (const r of rows) {
-      const speedup = baseline ? (baseline.ms / r.ms).toFixed(2) + 'x' : '-';
-      console.log(pad(r.label, 18) + pad(r.ms, 10) + pad(r.opsPerSec.toLocaleString(), 14) + speedup);
+    for (let rep = 1; rep <= REPEATS; rep++) {
+      process.stderr.write(`running: ${config.label} (${config.note}) rep ${rep}/${REPEATS}\n`);
+      allRuns.push(...runOne(config));
     }
   }
+
+  const benches = [...new Set(allRuns.map((r) => r.bench))];
+  const lines = [];
+
+  lines.push(`node ${process.version}, ${os.arch()}, ${os.cpus()[0]?.model ?? 'unknown CPU'}`);
+  lines.push(`${REPEATS} repeats per config, median reported, range shown as [min–max]`);
+
+  for (const bench of benches) {
+    const byLabel = CONFIGS.map((config) => {
+      const runs = allRuns.filter((r) => r.bench === bench && r.label === config.label);
+      const msValues = runs.map((r) => r.ms);
+      const medianMs = median(msValues);
+      const iterations = runs[0].iterations;
+      return {
+        label: config.label,
+        note: config.note,
+        medianMs,
+        minMs: Math.min(...msValues),
+        maxMs: Math.max(...msValues),
+        opsPerSec: Math.round((iterations / medianMs) * 1000),
+        iterations,
+      };
+    });
+    const baseline = byLabel.find((r) => r.label === 'no-opt');
+
+    lines.push('');
+    lines.push(`${bench}() — ${byLabel[0].iterations.toLocaleString()} iterations, after warmup`);
+    lines.push(pad('config', 18) + pad('median ms', 12) + pad('[min–max]', 20) + pad('ops/sec', 14) + 'vs no-opt');
+    for (const r of byLabel) {
+      const speedup = baseline ? (baseline.medianMs / r.medianMs).toFixed(2) + 'x' : '-';
+      const range = `[${r.minMs.toFixed(1)}–${r.maxMs.toFixed(1)}]`;
+      lines.push(
+        pad(r.label, 18) + pad(r.medianMs.toFixed(2), 12) + pad(range, 20) + pad(r.opsPerSec.toLocaleString(), 14) + speedup,
+      );
+    }
+  }
+
+  console.log(lines.join('\n'));
 }
 
 main();
