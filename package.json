@@ -12,7 +12,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --allow-natives-syntax --test spec/*.spec.js",
-    "example": "ts-node example/struct.example.ts"
+    "example": "ts-node example/struct.example.ts",
+    "bench": "npm run build && node bench/run-tiers.js",
+    "bench:no-opt": "npm run build && node --no-turbofan --no-maglev bench/tiers.bench.js no-opt",
+    "bench:maglev": "npm run build && node --no-turbofan --maglev bench/tiers.bench.js maglev-only",
+    "bench:turbofan": "npm run build && node --turbofan --no-maglev bench/tiers.bench.js turbofan-only",
+    "bench:turbofan-maglev": "npm run build && node --turbofan --maglev bench/tiers.bench.js turbofan+maglev"
   },
   "devDependencies": {
     "@types/node": "^20.14.9",
